@@ -202,7 +202,9 @@ class MenuPolicyTests(unittest.TestCase):
         self.assertIn("items.append(contentsOf: pool.prefix(n))", FEED)
         self.assertNotIn("landscapeOnlyActive", FEED)
         self.assertNotIn("portraitTarget", FEED)
-        self.assertNotIn("func remix(after:", FEED)
+        self.assertNotIn("seedPool", FEED)
+        self.assertIn("installLaunchCache(", FEED)
+        self.assertIn("discardLaunchCacheForRemote()", FEED)
 
     def test_feed_uses_recommend_endpoint_only(self):
         # 2026-11-14 老板定：只保留网页首页「推荐」(tab/feed)，精选(module/feed)删掉，也不给切换
@@ -244,6 +246,8 @@ struct DYAweme {
     var duration: Double = 60
     var live: Int? = nil  // 推荐直播条目（只用来判空，见 withoutDisabledLive）
     var isAd: Bool? = nil  // 推荐广告标记（withoutDisabledLive 按「推荐里显示广告」过滤）
+    var userDigged: Int? = nil
+    var isCollect: Int? = nil
 }
 '''
         checks = r'''
@@ -323,6 +327,30 @@ precondition(remix.items.first?.id == "current")
 precondition(remix.items.dropFirst().first.map { DYFeedModel.isPortrait($0) } == true)
 precondition(Set(remix.items.map(\.id)) == Set(["current", "wide-1", "tall-2", "wide-3"]))
 print("PASS Duo orientation preference keeps all items while preferring the current screen direction")
+
+// 启动秒开缓存与推荐流隔离：只装一条占位，远端可用后整体移除，其他缓存不进推荐池。
+let launch = DYFeedModel()
+launch.setPreferredLandscape(false)
+let cachedWide = DYAweme(id: "cache-wide", isTallFrame: false)
+let cachedTall = DYAweme(id: "cache-tall", isTallFrame: true)
+precondition(launch.installLaunchCache([cachedWide, cachedTall])?.id == "cache-tall")
+precondition(launch.items.map(\.id) == ["cache-tall"])
+precondition(launch.pool.isEmpty)
+precondition(launch.launchCacheID == "cache-tall")
+precondition(launch.installLaunchCache([cachedWide]) == nil, "only one launch placeholder is allowed")
+launch.pool = [DYAweme(id: "remote-1", isTallFrame: true), DYAweme(id: "remote-2", isTallFrame: false)]
+precondition(launch.discardLaunchCacheForRemote())
+precondition(launch.items.isEmpty)
+precondition(launch.launchCacheID == nil)
+precondition(launch.pool.map(\.id) == ["remote-1", "remote-2"])
+precondition(launch.fill(2) == 2)
+precondition(launch.items.map(\.id) == ["remote-1", "remote-2"])
+
+let offlineSwitch = DYFeedModel()
+precondition(offlineSwitch.installLaunchCache([cachedWide])?.id == "cache-wide")
+offlineSwitch.clearLaunchCachePlaceholder()
+precondition(offlineSwitch.launchCacheID == nil)
+print("PASS launch cache stays as a single placeholder outside the recommendation pool")
 '''
         scratch = Path(tempfile.gettempdir())
         scratch.mkdir(parents=True, exist_ok=True)

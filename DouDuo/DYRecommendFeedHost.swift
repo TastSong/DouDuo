@@ -128,7 +128,7 @@ extension DYRecommendFeedHost {
         #endif
         guard initialized, !refreshing, !feed.offlinePlayback, tab == .recommend,
               let first = feed.items.first else { return }
-        if currentID == nil {
+        if currentID == nil || currentIndex == nil {
             currentID = first.id   // 两个推荐页的 onChange(currentID) 会接着调 focusCurrent
             scrollID = first.id
         } else if let i = currentIndex {
@@ -267,6 +267,7 @@ extension DYRecommendFeedHost {
         if !feed.offlinePlayback { feed.offlineEpoch += 1 }
         feed.offlinePlayback = true
         feed.error = videos.isEmpty ? "没有可播放的离线视频" : nil
+        feed.clearLaunchCachePlaceholder()
         feed.pool = []
         feed.items = videos
         currentID = previous.flatMap { ids.contains($0) ? $0 : nil } ?? videos.first?.id

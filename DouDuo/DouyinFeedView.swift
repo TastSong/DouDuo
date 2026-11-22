@@ -1536,6 +1536,8 @@ final class DYFeedModel: ObservableObject {
     /// 已拿到、尚未播出的候选。匹配当前屏幕方向的先排，但不丢任何非匹配内容。
     var pool: [DYAweme] = []
     static let poolCap = 80
+    /// 启动秒开只允许一条本地缓存作为占位；远端首屏到了就替换，不混入推荐池。
+    private(set) var launchCacheID: String?
     /// nil = 普通设备，完全按服务端顺序；true/false = Duo 当前偏横屏/竖屏。
     private(set) var preferredLandscape: Bool?
     /// 每 10 个位置优先 9 个当前方向，剩 1 个给其他方向。
@@ -1548,6 +1550,32 @@ final class DYFeedModel: ObservableObject {
         guard let preferredLandscape else { return true }
         return Self.isPortrait(item) != preferredLandscape
     }
+
+    /// 启动时安装唯一一条本地秒开占位。其余缓存不进入推荐列表。
+    @discardableResult
+    func installLaunchCache(_ cached: [DYAweme]) -> DYAweme? {
+        guard items.isEmpty, pool.isEmpty, launchCacheID == nil else { return nil }
+        let eligible = allowedRecommendations(cached)
+        guard let item = eligible.first(where: matchesPreference) ?? eligible.first else { return nil }
+        items = [item]
+        launchCacheID = item.id
+        if item.userDigged == 1 { liked.insert(item.id) }
+        if item.isCollect == 1 { collected.insert(item.id) }
+        return item
+    }
+
+    /// 远端推荐已经可用时移除秒开占位，后续列表完全由推荐流组成。
+    @discardableResult
+    func discardLaunchCacheForRemote() -> Bool {
+        guard let id = launchCacheID else { return false }
+        items.removeAll { $0.id == id }
+        pool.removeAll { $0.id == id }
+        launchCacheID = nil
+        return true
+    }
+
+    /// 切到离线队列前清掉占位标记；离线列表由 setOfflineFeed 单独设置。
+    func clearLaunchCachePlaceholder() { launchCacheID = nil }
 
     func setPreferredLandscape(_ value: Bool?) {
         guard preferredLandscape != value else { return }
@@ -1593,12 +1621,6 @@ final class DYFeedModel: ObservableObject {
         _ = fill(count)
     }
 
-    /// 启动时把本地已缓存、没看过、又不在列表里的放到候选池最前（秒开）
-    func seedPool(_ cached: [DYAweme]) {
-        let have = Set(items.map(\.id)).union(pool.map(\.id))
-        pool = allowedRecommendations(cached).filter { !have.contains($0.id) } + pool
-    }
-
     private func trimPool() {
         // 只限制候选数量，不按横竖屏或内容类型淘汰；超出时保留最新拉回的服务端尾部。
         if pool.count > Self.poolCap { pool.removeFirst(pool.count - Self.poolCap) }
@@ -1622,6 +1644,7 @@ final class DYFeedModel: ObservableObject {
         let epoch = offlineEpoch
         let want = 6
         var added = 0
+        let launchCacheID = self.launchCacheID
 
         // 普通设备立即按服务端顺序起播；Duo 等拿到匹配方向的候选后再起播，
         // 避免外屏第一条就先落在横屏视频上。
@@ -1661,6 +1684,9 @@ final class DYFeedModel: ObservableObject {
                     added += fill(1)
                 }
             }
+            if let launchCacheID, !pool.isEmpty, discardLaunchCacheForRemote() {
+                DYLiveModel.log("DDCACHE replaced launch=\(launchCacheID)")
+            }
             if added < want { added += fill(want - added) }
             trimPool()
             let poolPortrait = pool.filter(Self.isPortrait).count
@@ -1673,7 +1699,7 @@ final class DYFeedModel: ObservableObject {
         }
     }
 
-    func reset() { items = []; hasMore = true; error = nil; pool = []; preferencePatternIndex = 0 }
+    func reset() { items = []; hasMore = true; error = nil; pool = []; launchCacheID = nil; preferencePatternIndex = 0 }
 }
 
 private struct DYFeedHostFrameKey: PreferenceKey {
@@ -1947,7 +1973,7 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
                 await updateOfflineFeed(true)
                 if feed.offlinePlayback { return }
             }
-            // 秒开：先播上次缓存好、还没看过的；连接抖音 / 拉推荐在后台接着往后补（两套界面共用 DYFeedModel.restoreForLaunch）
+            // 秒开：只播一条本地缓存占位；远端首屏回来后整体替换（两套界面共用 DYFeedModel.restoreForLaunch）
             let handedOff = handoffID.map { id in feed.items.contains { $0.id == id } } ?? false
             if handedOff, let id = handoffID {
                 // 从另一套界面切过来（init 里已接手进度）：列表原样沿用，不重排、不重新拉推荐
@@ -1961,7 +1987,11 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
                     scrollID = currentID
                 }
                 await feed.loadMore(bridge)
-                if currentID == nil { currentID = feed.items.first?.id }
+                if let first = feed.items.first,
+                   currentID == nil || !feed.items.contains(where: { $0.id == currentID }) {
+                    currentID = first.id
+                    scrollID = first.id
+                }
                 focusCurrent()
             }
             #if DEBUG
@@ -3211,7 +3241,7 @@ struct DYClassicFeedScreen: DYRecommendFeedHost {
                 await updateOfflineFeed(true)
                 if feed.offlinePlayback { return }
             }
-            // 秒开：先播上次缓存好、还没看过的；连接抖音 / 拉推荐在后台接着往后补（两套界面共用 DYFeedModel.restoreForLaunch）
+            // 秒开：只播一条本地缓存占位；远端首屏回来后整体替换（两套界面共用 DYFeedModel.restoreForLaunch）
             let handedOff = handoffID.map { id in feed.items.contains { $0.id == id } } ?? false
             if handedOff, let id = handoffID {
                 // 从另一套界面切过来（init 里已接手进度）：列表原样沿用，不重排、不重新拉推荐
@@ -3225,7 +3255,11 @@ struct DYClassicFeedScreen: DYRecommendFeedHost {
                     scrollID = currentID
                 }
                 await feed.loadMore(bridge)
-                if currentID == nil { currentID = feed.items.first?.id }
+                if let first = feed.items.first,
+                   currentID == nil || !feed.items.contains(where: { $0.id == currentID }) {
+                    currentID = first.id
+                    scrollID = first.id
+                }
                 focusCurrent()
             }
             #if DEBUG
@@ -6280,6 +6314,7 @@ extension DYFeedModel {
         collected.formUnion(replacement.collected)
         hasMore = replacement.hasMore
         error = nil
+        launchCacheID = nil
         offlinePlayback = false
         return first
     }
@@ -6361,36 +6396,17 @@ extension DYFeedModel {
         return (id, positions)
     }
 
-    /// 启动秒开：先恢复上次会话；没有会话就从本地已缓存未看的视频按加入顺序取 6 条。
-    /// 返回要定位的当前条和各条进度；都没有返回 nil。
+    /// 启动秒开：最多取一条本地已缓存未看的视频作为占位，随后由远端推荐整体替换。
+    /// 返回要定位的当前条和各条进度；没有可用缓存时返回 nil。
     func restoreForLaunch() -> (currentID: String?, positions: [String: Double])? {
         // 启动先清掉上次看过的缓存，避免重启后又被当成「待看」塞回推荐里
         Task { await DYVideoCache.shared.purgeWatched() }
         DispatchQueue.global(qos: .utility).async { DYStreamStore.shared.trim() }
-        var result: (currentID: String?, positions: [String: Double])?
-        // 启动不再恢复上次会话的条目：抖音播放地址带签名，过一段时间就 403，
-        // 拿旧条目起播会一直等到超时（实测有条等了 56.93 秒）。
-        // 启动先用「已缓存、还没看过」的本地视频秒开，随后由 loadMore 拉新推荐。
-        if items.isEmpty {
-            let cached = DYVideoCache.pendingSnapshot()
-            if !cached.isEmpty {
-                seedPool(cached)
-                // 按缓存记录顺序先放 6 条；推荐还没拉回来之前，只有这些本地缓存的能播。
-                fill(6)
-                markAccountState(cached)
-                result = (items.first?.id, [:])
-                DYLiveModel.log("DDCACHE 启动从缓存起播 n=\(items.count)/\(cached.count)")
-            }
-        }
-        seedPool(DYVideoCache.pendingSnapshot())
-        return result
-    }
-
-    private func markAccountState(_ list: [DYAweme]) {
-        for a in list {
-            if a.userDigged == 1 { liked.insert(a.id) }
-            if a.isCollect == 1 { collected.insert(a.id) }
-        }
+        guard items.isEmpty else { return nil }
+        let cached = DYVideoCache.pendingSnapshot()
+        guard let item = installLaunchCache(cached) else { return nil }
+        DYLiveModel.log("DDCACHE launch n=1/\(cached.count) id=\(item.id.suffix(6))")
+        return (item.id, [:])
     }
 
     func showToast(_ s: String) {

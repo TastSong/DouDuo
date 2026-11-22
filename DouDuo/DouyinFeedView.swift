@@ -2289,7 +2289,11 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
         .fullScreenCover(isPresented: $showMine, onDismiss: { DDPlayback.shared.releaseCover() }) {
             DYMineScreen(bridge: bridge,
                          onLogin: { reloadAfterLogin() },
-                         onAuthor: { a in authorTarget = a.author })
+                         onAuthor: { a in authorTarget = a.author },
+                         onSearch: {
+                             showMine = false
+                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { openSearch() }
+                         })
                 .onAppear { DDPlayback.shared.pauseAll(reason: .cover) }
         }
         .sheet(item: $authorTarget) { a in
@@ -3898,6 +3902,7 @@ struct DYUpstreamVideoPage: View {
     @Environment(\.dyOfflineVideoPlayback) private var offlinePlayback
     private var usesOfflineFile: Bool { offlinePlayback?.inLibrary == true }
     @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.dyDuoLandscapeWindow) private var duoLandscapeWindow
     private var railWidth: CGFloat { hSize == .compact ? 50 : 54 }
     private var actionColumnWidth: CGFloat { 54 }
     private var chromeSidePadding: CGFloat { 12 }
@@ -3938,6 +3943,7 @@ struct DYUpstreamVideoPage: View {
     @AppStorage("douyin_bg_play_v1") private var bgPlay = false
     @State private var heart = false
     @State private var shareCoversOfflineVideo = false
+    @State private var showShare = false
     @State private var saving = false
     @FocusState private var danmakuFocused: Bool
     @StateObject private var dm = DYDanmakuModel()
@@ -3946,6 +3952,19 @@ struct DYUpstreamVideoPage: View {
     @AppStorage("douyin_playback_rate_v1") private var playbackRate = 1.0
     @AppStorage(DDChromeMode.key) private var chromeModeRaw = DDChromeMode.classic.rawValue
     private var chromeMode: DDChromeMode { DDChromeMode(rawValue: chromeModeRaw) ?? .classic }
+    /// Duo 首页：四项互动固定在右下角，无底板，尺寸为旧栏的 3/5。
+    private var usesCompactDuoRail: Bool {
+        DYDuoInteractionRail.usesCompactStyle(
+            isDuo: DYDuoMetrics.isDuoHardware, isStandalone: onBack != nil,
+            usesRail: chromeMode.usesRail)
+    }
+    private var compactDuoRailBottom: CGFloat {
+        DYDuoInteractionRail.bottomPadding(
+            safeBottom: insets.bottom, isInnerLandscape: duoLandscapeWindow)
+    }
+    private var compactDuoRailTrailing: CGFloat {
+        max(DYDuoInteractionRail.trailingInset, insets.trailing)
+    }
     @ObservedObject private var peek = DDPeekInfo.shared
     /// 长按加速时右侧按钮/作者区淡出；这些控件按住也能触发加速（见 DYHoldBoost）。
     @StateObject private var boost = DYBoostControl()
@@ -3989,8 +4008,9 @@ struct DYUpstreamVideoPage: View {
                                         heart = true
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { heart = false }
                                     },
-                                    onSavePosition: onSavePosition, onClose: {}, fillWidth: autoFit,
-                                    onFillWidthChange: { autoFit = $0 },
+                                    onSavePosition: onSavePosition, onClose: {},
+                                    fillWidth: usesCompactDuoRail ? DYDuoInteractionRail.forcesFullBleedVideo : autoFit,
+                                    onFillWidthChange: usesCompactDuoRail ? nil : { autoFit = $0 },
                                     danmaku: danmakuOn ? dm.items : [],
                                     altURL: usesOfflineFile ? nil : source,
                                     quality: item.q,
@@ -4043,6 +4063,13 @@ struct DYUpstreamVideoPage: View {
                 // 长按加速时淡出按钮和信息，画面干净；不禁用点击区，手指按在按钮上也能继续加速。
                 .opacity(boost.boosting ? 0 : 1)
                 .animation(.easeOut(duration: 0.15), value: boost.boosting)
+            } else if usesCompactDuoRail {
+                info(fg)
+                    .padding(.leading, chromeSidePadding)
+                    .padding(.trailing, chromeSidePadding + DYDuoInteractionRail.visualWidth + 22)
+                    .padding(.bottom, max(insets.bottom, 18) + (item.images.isEmpty ? 30 : 20))
+                    .opacity(boost.boosting ? 0 : 1)
+                    .animation(.easeOut(duration: 0.15), value: boost.boosting)
             } else {
                 // 默认：PR #12 之前的布局，左下信息 + 右侧按钮栏
                 HStack(alignment: .bottom, spacing: 12) {
@@ -4063,6 +4090,15 @@ struct DYUpstreamVideoPage: View {
                 .animation(.easeOut(duration: 0.15), value: boost.boosting)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if usesCompactDuoRail && !commentsOpen && !dm.showInput {
+                compactDuoRail(fg)
+                    .padding(.trailing, compactDuoRailTrailing)
+                    .padding(.bottom, compactDuoRailBottom)
+                    .opacity(boost.boosting ? 0 : 1)
+                    .animation(.easeOut(duration: 0.15), value: boost.boosting)
+            }
+        }
         .overlay(alignment: .bottom) {
             if dm.showInput, rootRailTab == nil || onBack != nil {
                 DYDanmakuBar(model: dm, focused: $danmakuFocused, onSend: sendDanmaku).padding(.bottom, max(insets.bottom, 12) + 6)
@@ -4079,10 +4115,76 @@ struct DYUpstreamVideoPage: View {
         .onAppear { if isCurrent, onBack == nil { DYBoostRouter.shared.adopt(boost) } }
         // 弹幕：轮到这条时才拉（一次拉整条视频的）——共用 DYDanmakuModel
         .task(id: isCurrent) { await dm.load(item, isCurrent: isCurrent, bridge: bridge) }
+        .dyBottomSheet(isPresented: $showShare, kind: .share) {
+            DYForwardScreen(item: item, fromOfflineLibrary: usesOfflineFile,
+                            onlineActionsAllowed: offlinePlayback?.onlineActionsAllowed != false)
+        }
     }
 
     private func sendDanmaku() {
         Task { if await dm.send(item, bridge: bridge, onToast: onToast) { danmakuFocused = false } }
+    }
+
+    /// Duo 外屏 / 内屏共用：右下角四枚小按钮，无底板，视觉尺寸约为旧栏 3/5。
+    private func compactDuoRail(_ fg: Color) -> some View {
+        VStack(spacing: DYDuoInteractionRail.itemSpacing) {
+            compactDuoRailButton(liked ? "heart.fill" : "heart",
+                                 DYFormat.count(item.stats.digg + (liked ? 1 : 0)),
+                                 title: "点赞", tint: liked ? theme.status.danger.color(for: scheme) : fg,
+                                 id: "douyin.like", action: onLike)
+            compactDuoRailButton("ellipsis.bubble", DYFormat.count(item.stats.comment),
+                                 title: "评论", tint: fg, id: "douyin.comments", action: onComments)
+            compactDuoRailButton(collected ? "star.fill" : "star",
+                                 DYFormat.count(item.stats.collect + (collected ? 1 : 0)),
+                                 title: "收藏", tint: collected ? theme.status.warning.color(for: scheme) : fg,
+                                 id: "douyin.collect", action: onCollect)
+            Button {
+                if !boost.blocksTap { showShare = true }
+            } label: {
+                compactDuoRailLabel("arrowshape.turn.up.right", DYFormat.count(item.stats.share),
+                                    title: "分享", tint: fg)
+            }
+            .buttonStyle(.plain)
+            .modifier(DYHoldBoost(control: boost))
+            .accessibilityLabel("分享，\(DYFormat.count(item.stats.share))")
+            .accessibilityIdentifier("douyin.share")
+        }
+        .frame(width: DYDuoInteractionRail.visualWidth)
+        .shadow(color: .black.opacity(0.62), radius: 2, y: 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("douyin.video.compactActions")
+    }
+
+    private func compactDuoRailButton(_ icon: String, _ count: String, title: String,
+                                      tint: Color, id: String, action: @escaping () -> Void) -> some View {
+        Button {
+            if !boost.blocksTap { action() }
+        } label: {
+            compactDuoRailLabel(icon, count, title: title, tint: tint)
+        }
+        .buttonStyle(.plain)
+        .modifier(DYHoldBoost(control: boost))
+        .accessibilityLabel("\(title)，\(count)")
+        .accessibilityIdentifier(id)
+    }
+
+    private func compactDuoRailLabel(_ icon: String, _ count: String, title: String, tint: Color) -> some View {
+        VStack(spacing: 0) {
+            Image(systemName: icon)
+                .font(.system(size: DYDuoInteractionRail.iconSize, weight: .regular, design: .rounded))
+                .foregroundStyle(tint)
+                .frame(width: DYDuoInteractionRail.iconSize, height: DYDuoInteractionRail.iconSize)
+            Text(count)
+                .font(.system(size: 7.5, weight: .semibold))
+                .foregroundStyle(theme.media.onMediaSecondary.color(for: scheme))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .frame(maxWidth: DYDuoInteractionRail.visualWidth)
+        }
+        .frame(width: DYDuoInteractionRail.visualWidth, height: DYDuoInteractionRail.itemHeight)
+        .contentShape(Rectangle())
+        .accessibilityLabel(title)
     }
 
     private var composerEntry: [DYFeedComposerEntry] {

@@ -85,6 +85,10 @@ enum DYDuoMetrics {
     /// 外屏顶栏的 -80 贴顶只对 Duo 成立：Duo 外屏窗口内容区比物理屏顶端低约 80pt；
     /// 普通 iPhone 窗口从物理顶端开始，再往上推 80 就把顶栏推出屏幕（issue #16：点不到）。
     static let isDuoHardware: Bool = {
+        #if DEBUG
+        // 只在调试构建中用于普通模拟器验证 Duo 专属布局，不影响真机和 Release。
+        if ProcessInfo.processInfo.environment["DOUDUO_FORCE_DUO"] == "1" { return true }
+        #endif
         #if targetEnvironment(simulator)
         let id = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? ""
         #else

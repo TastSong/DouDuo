@@ -60,6 +60,7 @@ DouDuo 有四种界面：**默认 / 简洁 / 极简 / 经典**（`DDChromeMode`�
   - 坑：侧栏评论时视频区必须裁边（`DDClipIf`），否则播放器的环境光底（忽略安全区、铺满整屏）会盖住右侧评论栏 → 简洁内屏评论空白
   - 回归：`testOuterLandscapeVideoLiftsAboveCommentsInEveryMode`、`testInnerSideCommentsSwipeRightToCloseInEveryMode`、`testPhysicalHalfFoldCommentsHideSidebar`（四种模式）、`testCommentPresentationIsUnifiedAcrossLayouts`
 - [x] Duo 推荐流方向适配（2026-11-22）：外屏偏竖屏，内屏横屏偏横屏、内屏竖屏偏竖屏；约 90% 优先匹配，候选不足时继续拉取页面，始终保留全部候选，不硬过滤。回归覆盖在 `scripts/test_menu_policy.py` 与 `DYVideoFitTests`
+- [x] Duo 默认界面视频互动栏（2026-11-22）：爱心 / 评论 / 收藏 / 分享只保留四枚，竖排贴在右下角，无底板，视觉尺寸为旧栏的 3/5；外屏播放中展开后按内屏横屏几何重新排布。视频页不再显示“更多”，“更多”迁到点击头像进入的个人页右上角。
 - [x] 「我的 / 作者页 / 搜索」点进去的列表播放页（`DYCommentPlayerLayout`）：四种模式同一套经典评论几何（`playerLayout`），删掉非经典的 `upstreamBody`；只有菜单（经典系统导航栏 / 原生按钮）和简介面板按模式分。回归 `testListPlayerCommentsMatchFeedInEveryMode`、`testStandaloneCommentsRespectLayout`
 
 ## 验证分档（按改动大小，不默认跑模拟器）

@@ -171,6 +171,36 @@ struct PinchCase: Sendable {
 
 }
 
+@Suite("Duo 紧凑互动栏")
+struct DYDuoInteractionRailTests {
+    @Test func compactStyleOnlyAppliesToDuoHomeDefaultLayout() {
+        #expect(DYDuoInteractionRail.usesCompactStyle(
+            isDuo: true, isStandalone: false, usesRail: false))
+        #expect(!DYDuoInteractionRail.usesCompactStyle(
+            isDuo: false, isStandalone: false, usesRail: false))
+        #expect(!DYDuoInteractionRail.usesCompactStyle(
+            isDuo: true, isStandalone: true, usesRail: false))
+        #expect(!DYDuoInteractionRail.usesCompactStyle(
+            isDuo: true, isStandalone: false, usesRail: true))
+    }
+
+    @Test func compactStyleUsesThreeFifthsWidthAndNoContainer() {
+        #expect(DYDuoInteractionRail.visualWidth == 30)
+        #expect(DYDuoInteractionRail.visualWidth == CGFloat(50 * 3) / 5)
+        #expect(DYDuoInteractionRail.iconSize == 20)
+        #expect(DYDuoInteractionRail.itemSpacing == 3)
+        #expect(DYDuoInteractionRail.forcesFullBleedVideo)
+    }
+
+    @Test func railStaysAboveBottomGestureArea() {
+        #expect(DYDuoInteractionRail.bottomPadding(safeBottom: 0, isInnerLandscape: false) == 72)
+        #expect(DYDuoInteractionRail.bottomPadding(safeBottom: 34, isInnerLandscape: false) == 72)
+        #expect(DYDuoInteractionRail.bottomPadding(safeBottom: 44, isInnerLandscape: false) == 78)
+        #expect(DYDuoInteractionRail.bottomPadding(safeBottom: 34, isInnerLandscape: true) == 64)
+        #expect(DYDuoInteractionRail.bottomPadding(safeBottom: 50, isInnerLandscape: true) == 74)
+    }
+}
+
 @Suite("Duo 推荐流方向偏好")
 struct DYFeedOrientationPreferenceTests {
     @Test func matchesOuterAndInnerScreenStates() {
@@ -199,5 +229,15 @@ struct DYFeedOrientationPreferenceTests {
                                                 isDuoHardware: true, isOuterScreen: false) == true)
         #expect(DYVideoFit.feedPrefersLandscape(window: foldedLandscape, halfFolded: true,
                                                 isDuoHardware: true, isOuterScreen: false) == false)
+    }
+
+    @Test func unfoldingWhilePlayingMovesToInnerLandscapeMode() {
+        let outer = CGSize(width: 466, height: 678)
+        let innerLandscape = CGSize(width: 951, height: 669)
+        #expect(DYVideoFit.feedPrefersLandscape(window: outer, halfFolded: false,
+                                                isDuoHardware: true, isOuterScreen: true) == false)
+        #expect(DYVideoFit.feedPrefersLandscape(window: innerLandscape, halfFolded: false,
+                                                isDuoHardware: true, isOuterScreen: false) == true)
+        #expect(DYDuoInteractionRail.bottomPadding(safeBottom: 34, isInnerLandscape: true) == 64)
     }
 }

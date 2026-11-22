@@ -113,3 +113,22 @@ enum DYVideoFit {
         return CGFloat(max(screenAspect / videoAspect, videoAspect / screenAspect))
     }
 }
+
+/// Duo 视频页的紧凑互动栏。视觉宽度是旧 50pt 栏的 3/5，且不绘制任何底板。
+enum DYDuoInteractionRail {
+    static let visualWidth: CGFloat = 30
+    static let iconSize: CGFloat = 20
+    static let itemHeight: CGFloat = 32
+    static let itemSpacing: CGFloat = 3
+    static let trailingInset: CGFloat = 14
+    /// Duo 首页始终全屏播放；旧的“完整画面”偏好不能把右侧留成黑边。
+    static let forcesFullBleedVideo = true
+
+    static func usesCompactStyle(isDuo: Bool, isStandalone: Bool, usesRail: Bool) -> Bool {
+        isDuo && !isStandalone && !usesRail
+    }
+
+    static func bottomPadding(safeBottom: CGFloat, isInnerLandscape: Bool) -> CGFloat {
+        isInnerLandscape ? max(64, safeBottom + 24) : max(72, safeBottom + 34)
+    }
+}

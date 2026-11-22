@@ -1860,6 +1860,8 @@ struct DYMineScreen: View {
     let onLogin: () -> Void
     let onAuthor: (DYAweme) -> Void
     var onMessages: (() -> Void)? = nil
+    /// 从首页头像进入个人页后，低频的搜索入口统一收进右上角「更多」。
+    var onSearch: (() -> Void)? = nil
     /// 嵌在信息页里（跟信息共用右侧栏）：不画自己的返回键、不做左缘返回
     var embedded = false
     /// 内存缓存：「我的」被重建（切 Tab / 经典模式底栏切换）时直接用上次的资料和列表，先出画面再后台刷新。
@@ -1904,8 +1906,21 @@ struct DYMineScreen: View {
                     // 嵌在信息页（简洁 / 极简）时「账号」在右侧栏，顶栏不放，免得跟返回键挤在一起
                     if !embedded {
                         ToolbarItem(placement: .primaryAction) {
-                            Button("账号", systemImage: "person.2.circle") { showAccounts = true }
-                                .accessibilityIdentifier("douyin.mine.accounts")
+                            Menu {
+                                if let onSearch {
+                                    Button("搜索", systemImage: "magnifyingglass", action: onSearch)
+                                        .accessibilityIdentifier("douyin.mine.search")
+                                }
+                                Button("账号管理", systemImage: "person.2.circle") { showAccounts = true }
+                                    .accessibilityIdentifier("douyin.mine.accounts")
+                                DYSettingsButton()
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("更多")
+                            .accessibilityIdentifier("douyin.mine.more")
                         }
                     }
                 }

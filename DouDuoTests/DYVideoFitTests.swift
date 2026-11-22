@@ -189,7 +189,8 @@ struct DYDuoInteractionRailTests {
         #expect(DYDuoInteractionRail.visualWidth == CGFloat(50 * 3) / 5)
         #expect(DYDuoInteractionRail.iconSize == 20)
         #expect(DYDuoInteractionRail.itemSpacing == 3)
-        #expect(DYDuoInteractionRail.forcesFullBleedVideo)
+        #expect(DYVideoFit.defaultForceFill)
+        #expect(DYVideoFit.forceFillKey == "douyin_duo_force_fill_v1")
     }
 
     @Test func railStaysAboveBottomGestureArea() {

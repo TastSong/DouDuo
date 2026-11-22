@@ -2293,6 +2293,10 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
                          onSearch: {
                              showMine = false
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { openSearch() }
+                         },
+                         onSettings: {
+                             showMine = false
+                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showSettings = true }
                          })
                 .onAppear { DDPlayback.shared.pauseAll(reason: .cover) }
         }
@@ -2378,6 +2382,18 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
             .buttonStyle(.plain)
             .accessibilityLabel("信息")
             .accessibilityIdentifier("douyin.messages.top")
+
+            // 「搜索」：放在头像左侧，直接搜索视频。
+            Button { openSearch() } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(theme.media.onMedia.color(for: scheme).opacity(0.72))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("搜索视频")
+            .accessibilityIdentifier("douyin.search.top")
 
             // 「我的」：独立按钮（不属于 tab 切换）
             Button { showMine = true } label: {
@@ -3948,6 +3964,7 @@ struct DYUpstreamVideoPage: View {
     @FocusState private var danmakuFocused: Bool
     @StateObject private var dm = DYDanmakuModel()
     @AppStorage(DYVideoFit.preferenceKey) private var autoFit = true
+    @AppStorage(DYVideoFit.forceFillKey) private var forceFill = DYVideoFit.defaultForceFill
     @AppStorage("douyin_danmaku_v1") private var danmakuOn = true
     @AppStorage("douyin_playback_rate_v1") private var playbackRate = 1.0
     @AppStorage(DDChromeMode.key) private var chromeModeRaw = DDChromeMode.classic.rawValue
@@ -4009,7 +4026,7 @@ struct DYUpstreamVideoPage: View {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { heart = false }
                                     },
                                     onSavePosition: onSavePosition, onClose: {},
-                                    fillWidth: usesCompactDuoRail ? DYDuoInteractionRail.forcesFullBleedVideo : autoFit,
+                                    fillWidth: usesCompactDuoRail ? forceFill : autoFit,
                                     onFillWidthChange: usesCompactDuoRail ? nil : { autoFit = $0 },
                                     danmaku: danmakuOn ? dm.items : [],
                                     altURL: usesOfflineFile ? nil : source,

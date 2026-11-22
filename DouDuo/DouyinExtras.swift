@@ -1862,6 +1862,8 @@ struct DYMineScreen: View {
     var onMessages: (() -> Void)? = nil
     /// 从首页头像进入个人页后，低频的搜索入口统一收进右上角「更多」。
     var onSearch: (() -> Void)? = nil
+    /// 先关闭个人页，再由首页打开设置；避免全屏页覆盖时 sheet 被系统吞掉。
+    var onSettings: (() -> Void)? = nil
     /// 嵌在信息页里（跟信息共用右侧栏）：不画自己的返回键、不做左缘返回
     var embedded = false
     /// 内存缓存：「我的」被重建（切 Tab / 经典模式底栏切换）时直接用上次的资料和列表，先出画面再后台刷新。
@@ -1913,7 +1915,12 @@ struct DYMineScreen: View {
                                 }
                                 Button("账号管理", systemImage: "person.2.circle") { showAccounts = true }
                                     .accessibilityIdentifier("douyin.mine.accounts")
-                                DYSettingsButton()
+                                if let onSettings {
+                                    Button("设置", systemImage: "gearshape", action: onSettings)
+                                        .accessibilityIdentifier("douyin.settings")
+                                } else {
+                                    DYSettingsButton()
+                                }
                             } label: {
                                 Image(systemName: "ellipsis")
                                     .frame(width: 44, height: 44)

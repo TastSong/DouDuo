@@ -5,6 +5,9 @@ import Foundation
 /// 播放容器始终铺满屏幕；关掉铺满后，内容缩小，四周露出已有的环境光。
 enum DYVideoFit {
     static let preferenceKey = "douyin_autofit_v1"
+    /// Duo 首页的全屏覆盖开关。默认开启，关闭后允许按完整画面显示。
+    static let forceFillKey = "douyin_duo_force_fill_v1"
+    static let defaultForceFill = true
     static let title = "铺满宽度"
     static let moreIdentifier = "douyin.quick.fit"
     /// 与原来的 @AppStorage 默认值一致。本热修不改默认缩放策略。
@@ -121,9 +124,6 @@ enum DYDuoInteractionRail {
     static let itemHeight: CGFloat = 32
     static let itemSpacing: CGFloat = 3
     static let trailingInset: CGFloat = 14
-    /// Duo 首页始终全屏播放；旧的“完整画面”偏好不能把右侧留成黑边。
-    static let forcesFullBleedVideo = true
-
     static func usesCompactStyle(isDuo: Bool, isStandalone: Bool, usesRail: Bool) -> Bool {
         isDuo && !isStandalone && !usesRail
     }

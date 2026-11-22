@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 完整设置页：「更多 → 设置」点进来。所有全局偏好集中在这里，菜单里不再层层嵌套。
-/// 当前视频相关的操作（转发 / 不感兴趣 / 下载 / 倍速 / 静音 / 听书 / 自动连播 / 发弹幕）和铺满宽度都在表层菜单，这里不重复。
+/// 当前视频相关的操作（转发 / 不感兴趣 / 下载 / 倍速 / 静音 / 听书 / 自动连播 / 发弹幕）在表层菜单；全局“强制铺满”放在这里。
 struct DYSettingsScreen: View {
     @AppStorage(DYCommentKeyboard.autoFocusKey) private var replyAutoKeyboard = true
     /// 打开「网页版 / 登录」：由宿主页面负责弹出网页并在关闭后重载签名页
@@ -20,6 +20,7 @@ struct DYSettingsScreen: View {
     // 播放
     @AppStorage(DYVideoAmbient.key) private var ambientLevel = DYVideoAmbient.defaultLevel
     @AppStorage(DYAutoPiP.storageKey) private var autoPiP = false
+    @AppStorage(DYVideoFit.forceFillKey) private var forceFill = DYVideoFit.defaultForceFill
     // 内容
     @AppStorage(DYHashtagFilter.storageKey) private var blockedHashtags = ""
     @AppStorage(DYFeedExtras.liveKey) private var feedLive = true
@@ -64,6 +65,8 @@ struct DYSettingsScreen: View {
                 }
 
                 Section {
+                    Toggle("强制铺满", isOn: $forceFill)
+                        .accessibilityIdentifier("settings.forceFill")
                     Picker("环境光", selection: $ambientLevel) {
                         ForEach(DYVideoAmbient.levels, id: \.self) { Text(DYVideoAmbient.title($0)).tag($0) }
                     }
@@ -82,7 +85,7 @@ struct DYSettingsScreen: View {
                 } header: {
                     Text("播放与弹幕")
                 } footer: {
-                    Text("环境光：视频没铺满时，四周跟着画面颜色变化。弹幕显示在屏幕上方 1/3。倍速、静音、听书、自动连播、铺满宽度、发弹幕在播放页菜单里。\n自动画中画：打开后离开 DouDuo 时，当前短视频会尝试进入系统画中画（由系统决定能否启动）；清屏时的画中画保持原样。")
+                    Text("强制铺满：默认开启，Duo 首页始终全屏显示；关闭后按完整画面显示。环境光：视频没铺满时，四周跟着画面颜色变化。弹幕显示在屏幕上方 1/3。倍速、静音、听书、自动连播、发弹幕在播放页菜单里。\n自动画中画：打开后离开 DouDuo 时，当前短视频会尝试进入系统画中画（由系统决定能否启动）；清屏时的画中画保持原样。")
                 }
 
                 Section {
@@ -208,7 +211,10 @@ struct DYSettingsButton: View {
     @Environment(\.dyOpenSettings) private var open
     var body: some View {
         if let open {
-            Button("设置", systemImage: "gearshape") { open() }
+            Button("设置", systemImage: "gearshape") {
+                // Menu 收起动画期间直接弹 sheet 会被系统吞掉，首次点击表现为没反应。
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { open() }
+            }
                 .accessibilityIdentifier("douyin.settings")
         }
     }

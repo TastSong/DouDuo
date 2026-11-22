@@ -74,6 +74,16 @@ enum DYVideoFit {
         (fillWidth && sameOrientation(videoAspect: videoAspect, screenAspect: screenAspect)) ? .aspectFill : .aspectFit
     }
 
+    /// Duo 推荐流的横竖偏好。外屏始终偏竖屏；内屏按当前窗口方向匹配。
+    /// 返回 nil 表示不干预普通 iPhone / iPad 的服务端顺序。
+    static func feedPrefersLandscape(window: CGSize, halfFolded: Bool,
+                                     isDuoHardware: Bool, isOuterScreen: Bool) -> Bool? {
+        guard isDuoHardware else { return nil }
+        if isOuterScreen { return false }
+        let landscapeWindow = window.width > window.height
+        return halfFolded ? !landscapeWindow : landscapeWindow
+    }
+
     /// 全屏容器不变。Fit 时返回居中内容尺寸，短边留给环境光。
     static func contentSize(container: CGSize, videoAspect: Double, fillWidth: Bool) -> CGSize {
         guard container.width > 1, container.height > 1 else { return container }

@@ -170,3 +170,34 @@ struct PinchCase: Sendable {
     var committed: Bool?
 
 }
+
+@Suite("Duo 推荐流方向偏好")
+struct DYFeedOrientationPreferenceTests {
+    @Test func matchesOuterAndInnerScreenStates() {
+        let outer = CGSize(width: 466, height: 678)
+        let innerPortrait = CGSize(width: 669, height: 951)
+        let innerLandscape = CGSize(width: 951, height: 669)
+
+        #expect(DYVideoFit.feedPrefersLandscape(window: outer, halfFolded: false,
+                                                isDuoHardware: true, isOuterScreen: true) == false)
+        #expect(DYVideoFit.feedPrefersLandscape(window: innerPortrait, halfFolded: false,
+                                                isDuoHardware: true, isOuterScreen: false) == false)
+        #expect(DYVideoFit.feedPrefersLandscape(window: innerLandscape, halfFolded: false,
+                                                isDuoHardware: true, isOuterScreen: false) == true)
+        // 外屏即使被旋转，仍按需求保持竖屏偏好。
+        #expect(DYVideoFit.feedPrefersLandscape(window: CGSize(width: 678, height: 466), halfFolded: false,
+                                                isDuoHardware: true, isOuterScreen: true) == false)
+        // 普通设备不改变服务端顺序。
+        #expect(DYVideoFit.feedPrefersLandscape(window: innerLandscape, halfFolded: false,
+                                                isDuoHardware: false, isOuterScreen: false) == nil)
+    }
+
+    @Test func halfFoldUsesPlayablePaneOrientation() {
+        let foldedPortrait = CGSize(width: 669, height: 951)
+        let foldedLandscape = CGSize(width: 951, height: 669)
+        #expect(DYVideoFit.feedPrefersLandscape(window: foldedPortrait, halfFolded: true,
+                                                isDuoHardware: true, isOuterScreen: false) == true)
+        #expect(DYVideoFit.feedPrefersLandscape(window: foldedLandscape, halfFolded: true,
+                                                isDuoHardware: true, isOuterScreen: false) == false)
+    }
+}

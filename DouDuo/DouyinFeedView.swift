@@ -1533,19 +1533,64 @@ final class DYFeedModel: ObservableObject {
 
     /// 视频比屏幕窄（左右黑边）时自动放大铺满宽度；菜单里可关
     @AppStorage(DYVideoFit.preferenceKey) var autoFit = true
-    /// 已拿到、尚未播出的候选。只按服务端返回顺序进出，不按内容类型重排。
+    /// 已拿到、尚未播出的候选。匹配当前屏幕方向的先排，但不丢任何非匹配内容。
     var pool: [DYAweme] = []
     static let poolCap = 80
+    /// nil = 普通设备，完全按服务端顺序；true/false = Duo 当前偏横屏/竖屏。
+    private(set) var preferredLandscape: Bool?
+    /// 每 10 个位置优先 9 个当前方向，剩 1 个给其他方向。
+    static let preferredShare = 0.9
+    private var preferencePatternIndex = 0
 
-    /// 从候选池按原顺序取最多 maxN 条。推荐流不在这里挑选横竖屏或调整比例。
+    static func isPortrait(_ item: DYAweme) -> Bool { !item.images.isEmpty || item.isTallFrame }
+
+    private func matchesPreference(_ item: DYAweme) -> Bool {
+        guard let preferredLandscape else { return true }
+        return Self.isPortrait(item) != preferredLandscape
+    }
+
+    func setPreferredLandscape(_ value: Bool?) {
+        guard preferredLandscape != value else { return }
+        preferredLandscape = value
+        preferencePatternIndex = 0
+    }
+
+    /// 从候选池取最多 maxN 条。优先选择匹配当前方向的内容；数量不足或轮到其他方向时，
+    /// 仍从原候选池补齐，绝不按横竖屏过滤。同一方向内保持服务端原顺序。
     @discardableResult
     func fill(_ maxN: Int) -> Int {
         pool = allowedRecommendations(pool)
         let n = min(max(0, maxN), pool.count)
         guard n > 0 else { return 0 }
-        items.append(contentsOf: pool.prefix(n))
-        pool.removeFirst(n)
+
+        guard let preferredLandscape else {
+            items.append(contentsOf: pool.prefix(n))
+            pool.removeFirst(n)
+            return n
+        }
+
+        let preferredPortrait = !preferredLandscape
+        for _ in 0..<n {
+            let wantsPreferred = preferencePatternIndex != 9
+            preferencePatternIndex = (preferencePatternIndex + 1) % 10
+            let targetPortrait = wantsPreferred ? preferredPortrait : !preferredPortrait
+            let index = pool.firstIndex { Self.isPortrait($0) == targetPortrait } ?? 0
+            items.append(pool.remove(at: index))
+        }
         return n
+    }
+
+    /// 屏幕方向变化：当前条及之前不动，只重排后面的内容。所有待播条目都会保留。
+    func remix(after index: Int?) {
+        guard preferredLandscape != nil else { return }
+        let keep = (index ?? -1) + 1
+        guard keep < items.count || !pool.isEmpty else { return }
+        let upcoming = Array(items.dropFirst(keep))
+        if keep < items.count { items.removeSubrange(keep...) }
+        pool = allowedRecommendations(upcoming + pool)
+        preferencePatternIndex = 0
+        let count = pool.count
+        _ = fill(count)
     }
 
     /// 启动时把本地已缓存、没看过、又不在列表里的放到候选池最前（秒开）
@@ -1576,10 +1621,30 @@ final class DYFeedModel: ObservableObject {
         defer { loading = false }
         let epoch = offlineEpoch
         let want = 6
-        var added = fill(want)
+        var added = 0
+
+        // 普通设备立即按服务端顺序起播；Duo 等拿到匹配方向的候选后再起播，
+        // 避免外屏第一条就先落在横屏视频上。
+        if preferredLandscape == nil {
+            added += fill(want)
+        } else if items.isEmpty, pool.contains(where: matchesPreference) {
+            added += fill(1)
+        }
+
         do {
             var pages = 0
             while added < want && pages < 8 && (hasMore || items.isEmpty) {
+                let remaining = want - added
+                let neededPreferred = preferredLandscape == nil
+                    ? 0
+                    : Int(ceil(Double(remaining) * Self.preferredShare))
+                let havePreferred = preferredLandscape == nil
+                    ? 0
+                    : pool.filter(matchesPreference).count
+                let enoughPool = pool.count >= remaining
+                let enoughPreferred = preferredLandscape == nil || havePreferred >= neededPreferred
+                if enoughPool && enoughPreferred { break }
+
                 let r = try await bridge.fetchFeed()
                 guard !Task.isCancelled, !offlinePlayback, epoch == offlineEpoch else { return }
                 pages += 1
@@ -1592,10 +1657,15 @@ final class DYFeedModel: ObservableObject {
                 }
                 pool.append(contentsOf: fresh)
                 hasMore = r.hasMore || !r.items.isEmpty
-                added += fill(want - added)
+                if preferredLandscape != nil, items.isEmpty, pool.contains(where: matchesPreference) {
+                    added += fill(1)
+                }
             }
+            if added < want { added += fill(want - added) }
             trimPool()
-            DYLiveModel.log("DDFEEDORDER added=\(added) pool=\(pool.count)")
+            let poolPortrait = pool.filter(Self.isPortrait).count
+            let poolLandscape = pool.count - poolPortrait
+            DYLiveModel.log("DDFEEDORDER added=\(added) pool=\(pool.count) portrait=\(poolPortrait) landscape=\(poolLandscape) preferred=\(preferredLandscape.map { $0 ? "landscape" : "portrait" } ?? "server")")
             error = (items.isEmpty && added == 0) ? (DYHashtagFilter(rawValue: defaults.string(forKey: DYHashtagFilter.storageKey) ?? "").tags.isEmpty
                 ? "暂时没刷到推荐，登录后或稍后再试" : "暂时没有符合标签过滤条件的推荐，可调整屏蔽标签或稍后重试") : nil
         } catch {
@@ -1603,7 +1673,7 @@ final class DYFeedModel: ObservableObject {
         }
     }
 
-    func reset() { items = []; hasMore = true; error = nil; pool = [] }
+    func reset() { items = []; hasMore = true; error = nil; pool = []; preferencePatternIndex = 0 }
 }
 
 private struct DYFeedHostFrameKey: PreferenceKey {
@@ -1872,6 +1942,7 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
             #endif
             Task { myUser = try? await bridge.selfProfile() }
             if tab == .live { return }   // 起手就是直播页（调试）时别把推荐流的播放器都拉起来
+            updateFeedOrientation(DYDuoMetrics.currentFeedPreferredLandscape(isOuterScreen: hSize == .compact))
             if DYOfflineDownloads.shared.isOffline {
                 await updateOfflineFeed(true)
                 if feed.offlinePlayback { return }
@@ -2090,6 +2161,13 @@ struct DYUpstreamFeedScreen: DYRecommendFeedHost {
                 .onAppear { topNudge = nudge; topBarWidth = barW }
                 .onChange(of: nudge) { _, n in topNudge = n }
                 .onChange(of: barW) { _, v in withAnimation(.snappy) { topBarWidth = v } }
+                .onGeometryChange(for: Bool?.self) { proxy in
+                    DYVideoFit.feedPrefersLandscape(
+                        window: proxy.size,
+                        halfFolded: DYDuoMetrics.foldIsActive(proxy),
+                        isDuoHardware: DYDuoMetrics.isDuoHardware,
+                        isOuterScreen: hSize == .compact)
+                } action: { updateFeedOrientation($0) }
         }
     }
 
@@ -2952,6 +3030,7 @@ struct DYClassicFeedScreen: DYRecommendFeedHost {
     @State var initialized = false
     @State var refreshing = false
     @Environment(\.dyStacksLandscapeComments) private var stacksLandscapeComments
+    @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.dyDuoLandscapeWindow) private var duoLandscapeWindow
     @Environment(\.dyHingeClosed) private var hingeClosed
     @State var showComments = false
@@ -3107,6 +3186,7 @@ struct DYClassicFeedScreen: DYRecommendFeedHost {
             }
             #endif
             if tab == .live { return }   // 起手就是直播页（调试）时别把推荐流的播放器都拉起来
+            updateFeedOrientation(DYDuoMetrics.currentFeedPreferredLandscape(isOuterScreen: hSize == .compact))
             if DYOfflineDownloads.shared.isOffline {
                 await updateOfflineFeed(true)
                 if feed.offlinePlayback { return }
@@ -3360,6 +3440,13 @@ struct DYClassicFeedScreen: DYRecommendFeedHost {
     private var layoutRoot: some View {
         GeometryReader { geo in
             flatArrangement(geo)
+                .onGeometryChange(for: Bool?.self) { proxy in
+                    DYVideoFit.feedPrefersLandscape(
+                        window: proxy.size,
+                        halfFolded: DYDuoMetrics.foldIsActive(proxy),
+                        isDuoHardware: DYDuoMetrics.isDuoHardware,
+                        isOuterScreen: hSize == .compact)
+                } action: { updateFeedOrientation($0) }
                 .onChange(of: geo.safeAreaInsets, initial: true) { _, value in
                     insets = value
                     if !showComments { compactHeaderInsets = value }
@@ -6043,6 +6130,7 @@ extension DYFeedModel {
         try Task.checkCancellation()
         let previous = Set(items.map(\.id))
         let replacement = DYFeedModel(defaults: defaults)
+        replacement.setPreferredLandscape(preferredLandscape)
         await replacement.loadMore(bridge)
         try Task.checkCancellation()
         if excludingCurrentItems {
@@ -6055,6 +6143,7 @@ extension DYFeedModel {
     func replaceRecommendations(with replacement: DYFeedModel) {
         guard !replacement.items.isEmpty else { return }
         reset()
+        preferredLandscape = replacement.preferredLandscape
         items = replacement.items
         pool = replacement.pool
         liked.formUnion(replacement.liked)

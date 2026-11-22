@@ -474,6 +474,20 @@ extension DYRecommendFeedHost {
         DYLiveModel.log("DDREFRESH ok n=\(feed.items.count) first=\(currentID ?? "-")")
     }
 
+    /// Duo 姿态变化：更新横竖偏好，只重排当前条之后的内容，不打断当前播放。
+    func updateFeedOrientation(_ preferredLandscape: Bool?) {
+        guard feed.preferredLandscape != preferredLandscape else { return }
+        feed.setPreferredLandscape(preferredLandscape)
+        DYLiveModel.log("DDFEEDPREF landscape=\(preferredLandscape.map { $0 ? "1" : "0" } ?? "none")")
+        guard !feed.offlinePlayback, !feed.items.isEmpty else { return }
+        feed.remix(after: currentIndex)
+        if currentID == nil {
+            currentID = feed.items.first?.id
+            scrollID = currentID
+        }
+        focusCurrent()
+    }
+
     /// 换条时：上一条看完没有（≥95%，网页版同口径）+ 新一条起播 1.5 秒后上报
     func reportWatch(old: String?, new: String?) {
         if feed.finishedOfflineID == old { feed.finishedOfflineID = nil }

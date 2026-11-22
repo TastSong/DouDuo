@@ -97,6 +97,22 @@ enum DYDuoMetrics {
         return id == "iPhone19,4"
     }()
 
+    /// 首批推荐发出前读取当前窗口尺寸；只在 MainActor 的 task 中调用。
+    @MainActor static var currentWindowSize: CGSize? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?.bounds.size
+    }
+
+    /// 首批推荐使用的屏幕方向偏好。外屏固定竖屏，内屏按当前窗口方向。
+    @MainActor static func currentFeedPreferredLandscape(isOuterScreen: Bool) -> Bool? {
+        guard isDuoHardware else { return nil }
+        if isOuterScreen { return false }
+        guard let size = currentWindowSize else { return nil }
+        return size.width > size.height
+    }
+
     /// 窗口顶部安全区（状态栏 / 灵动岛高度）。播放页整层忽略了安全区，GeometryProxy 量到的 top 为 0，只能读窗口。
     /// ⚠️ 返回缓存值，**不能在 body 里同步读 keyWindow.safeAreaInsets**：那会让 UIKit 在 SwiftUI 刷新途中重新布局，
     /// 触发 AttributeGraph「Cycle detected」，之后推荐页再也不刷新（1.6.2/1.6.3 普通 iPhone 默认界面：开头不播、

@@ -273,7 +273,56 @@ mixed.pool = [
 ]
 precondition(mixed.fill(5) == 5)
 precondition(mixed.items.map(\.id) == ["portrait-0", "landscape-1", "portrait-2", "gallery-3", "landscape-4"])
-print("PASS server order preserved across mixed portrait, landscape and gallery content")
+print("PASS non-Duo server order preserved across mixed portrait, landscape and gallery content")
+
+// Duo 偏向横屏：每 10 个位置优先 9 个横屏，但所有候选都必须保留，同方向内顺序不变。
+let landscapeFirst = DYFeedModel()
+landscapeFirst.setPreferredLandscape(true)
+landscapeFirst.pool = (0..<20).map { DYAweme(id: "ls\($0)", isTallFrame: $0 % 2 == 0) }
+precondition(landscapeFirst.fill(20) == 20)
+precondition(landscapeFirst.items.count == 20)
+precondition(Set(landscapeFirst.items.map(\.id)).count == 20, "orientation preference must not filter")
+precondition(landscapeFirst.items.prefix(6).allSatisfy { !DYFeedModel.isPortrait($0) })
+precondition(landscapeFirst.items.filter { !DYFeedModel.isPortrait($0) }.map(\.id) == (0..<20).filter { $0 % 2 == 1 }.map { "ls\($0)" })
+precondition(landscapeFirst.items.filter(DYFeedModel.isPortrait).map(\.id) == (0..<20).filter { $0 % 2 == 0 }.map { "ls\($0)" })
+
+// Duo 偏向竖屏：方向反转，但仍保留服务端全部内容。
+let portraitFirst = DYFeedModel()
+portraitFirst.setPreferredLandscape(false)
+portraitFirst.pool = (0..<20).map { DYAweme(id: "pt\($0)", isTallFrame: $0 % 2 == 0) }
+precondition(portraitFirst.fill(8) == 8)
+precondition(portraitFirst.items.prefix(8).allSatisfy(DYFeedModel.isPortrait))
+precondition(Set(portraitFirst.items.map(\.id)).count == 8)
+
+// 匹配内容不足时不截断、不饿死：先用横屏，再用竖屏补齐。
+let scarce = DYFeedModel()
+scarce.setPreferredLandscape(true)
+scarce.pool = [
+    DYAweme(id: "p0", isTallFrame: true), DYAweme(id: "p1", isTallFrame: true),
+    DYAweme(id: "l2", isTallFrame: false), DYAweme(id: "p3", isTallFrame: true),
+    DYAweme(id: "p4", isTallFrame: true), DYAweme(id: "p5", isTallFrame: true),
+]
+precondition(scarce.fill(6) == 6)
+precondition(Set(scarce.items.map(\.id)) == Set(["p0", "p1", "l2", "p3", "p4", "p5"]))
+precondition(scarce.items.first?.id == "l2")
+
+// 转姿态时当前条不动，只重排后面；切换偏好后所有后续条目仍保留。
+let remix = DYFeedModel()
+remix.items = [
+    DYAweme(id: "current", isTallFrame: true), DYAweme(id: "wide-1", isTallFrame: false),
+    DYAweme(id: "tall-2", isTallFrame: true), DYAweme(id: "wide-3", isTallFrame: false),
+]
+remix.setPreferredLandscape(true)
+remix.remix(after: 0)
+precondition(remix.items.first?.id == "current")
+precondition(Set(remix.items.map(\.id)) == Set(["current", "wide-1", "tall-2", "wide-3"]))
+precondition(remix.items.dropFirst().first.map { !DYFeedModel.isPortrait($0) } == true)
+remix.setPreferredLandscape(false)
+remix.remix(after: 0)
+precondition(remix.items.first?.id == "current")
+precondition(remix.items.dropFirst().first.map { DYFeedModel.isPortrait($0) } == true)
+precondition(Set(remix.items.map(\.id)) == Set(["current", "wide-1", "tall-2", "wide-3"]))
+print("PASS Duo orientation preference keeps all items while preferring the current screen direction")
 '''
         scratch = Path(tempfile.gettempdir())
         scratch.mkdir(parents=True, exist_ok=True)
